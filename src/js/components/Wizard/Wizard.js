@@ -53,6 +53,41 @@ const findStepById = (steps, id) => {
   return undefined;
 };
 
+// Resolve the step that follows `step`, honoring step.nextStep(value)
+// branching; otherwise the next enabled leaf.
+const resolveNextId = (
+  step,
+  { steps, flatSteps, value, clickableSteps, warn = false },
+) => {
+  if (!step) return undefined;
+  if (typeof step.nextStep === 'function') {
+    const nextId = step.nextStep(value);
+    if (!nextId) return undefined;
+    const match = findStepById(steps, nextId);
+    if (!match) {
+      if (warn && process.env.NODE_ENV !== 'production') {
+        console.warn(
+          `Wizard: nextStep("${nextId}") does not match any step id. ` +
+            'Staying on current step.',
+        );
+      }
+      return undefined;
+    }
+    return !match.disabled ? nextId : undefined;
+  }
+  let nextIndex = flatSteps.findIndex((leaf) => leaf.id === step.id) + 1;
+  while (nextIndex < flatSteps.length) {
+    const nextStep = flatSteps[nextIndex];
+    if (!nextStep?.disabled) return nextStep.id;
+    if (nextStep?.disabled && (clickableSteps || nextStep?.skippable)) {
+      nextIndex += 1;
+    } else {
+      return undefined;
+    }
+  }
+  return undefined;
+};
+
 const formHasErrors = (result) =>
   result?.form?.ok === false ||
   Object.keys(result?.form?.errors || {}).length > 0;
@@ -231,7 +266,6 @@ const Wizard = forwardRef(
     useLayoutEffect(() => {
       navigationVersion.current += 1;
     }, [currentStep]);
-
     const registerForm = useCallback((stepId, validateForm) => {
       formValidators.current.set(stepId, validateForm);
       return () => {
@@ -355,44 +389,39 @@ const Wizard = forwardRef(
     );
 
     // Resolve next step id, honoring step.nextStep(formValue) branching.
-    const resolveNextStepId = useCallback(() => {
-      if (!currentStepObj) return undefined;
-      if (typeof currentStepObj.nextStep === 'function') {
-        const nextId = currentStepObj.nextStep(formValue);
-        if (!nextId) return undefined;
-        const match = findStepById(steps, nextId);
-        if (!match) {
-          if (process.env.NODE_ENV !== 'production') {
-            console.warn(
-              `Wizard: nextStep("${nextId}") does not match any step id. ` +
-                'Staying on current step.',
-            );
-          }
-          return undefined;
-        }
-        return !match.disabled ? nextId : undefined;
-      }
-      let nextIndex = currentStepIndex + 1;
-      while (nextIndex < flatSteps.length) {
-        const nextStep = flatSteps[nextIndex];
-        if (!nextStep?.disabled) return nextStep.id;
-        if (nextStep?.disabled && (clickableSteps || nextStep?.skippable)) {
-          nextIndex += 1;
-        } else {
-          return undefined;
-        }
-      }
-      return undefined;
-    }, [
-      clickableSteps,
-      currentStepObj,
-      currentStepIndex,
-      flatSteps,
-      formValue,
-      steps,
-    ]);
+    const resolveNextStepId = useCallback(
+      () =>
+        resolveNextId(currentStepObj, {
+          steps,
+          flatSteps,
+          value: formValue,
+          clickableSteps,
+          warn: true,
+        }),
+      [clickableSteps, currentStepObj, flatSteps, formValue, steps],
+    );
 
     const resolvePreviousStepId = useCallback(() => {
+      // Walk the flow from the first step so steps bypassed by nextStep
+      // branching are not revisited.
+      const seen = new Set();
+      let previousId;
+      let stepId = firstEnabled?.id;
+      while (stepId && !seen.has(stepId)) {
+        if (stepId === currentStep) {
+          if (previousId) return previousId;
+          break;
+        }
+        seen.add(stepId);
+        previousId = stepId;
+        stepId = resolveNextId(findStepById(steps, stepId), {
+          steps,
+          flatSteps,
+          value: formValue,
+          clickableSteps,
+        });
+      }
+      // Current step is off the flow (e.g. reached via goTo): go linear.
       let prevIndex = currentStepIndex - 1;
       while (prevIndex >= 0) {
         const prevStep = flatSteps[prevIndex];
@@ -400,7 +429,15 @@ const Wizard = forwardRef(
         prevIndex -= 1;
       }
       return undefined;
-    }, [currentStepIndex, flatSteps]);
+    }, [
+      clickableSteps,
+      currentStep,
+      currentStepIndex,
+      firstEnabled,
+      flatSteps,
+      formValue,
+      steps,
+    ]);
 
     // Apply a navigation transition (id, history, completion, focus).
     const applyTransition = useCallback(
