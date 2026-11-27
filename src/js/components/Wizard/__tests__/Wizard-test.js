@@ -1450,6 +1450,50 @@ describe('Wizard', () => {
     expect(screen.getByRole('heading', { name: 'Target' })).toBeTruthy();
   });
 
+  test('previous skips steps bypassed by nextStep branching', async () => {
+    const user = userEvent.setup();
+    const steps = [
+      { id: 'start', title: 'Start', nextStep: () => 'skipTarget' },
+      { id: 'middle', title: 'Middle' },
+      { id: 'skipTarget', title: 'Target' },
+      { id: 'end', title: 'End' },
+    ];
+    render(
+      <Grommet>
+        <Wizard
+          steps={steps}
+          renderStep={renderStep}
+          aria-label="Test wizard"
+        />
+      </Grommet>,
+    );
+    await user.click(screen.getByRole('button', { name: /next/i }));
+    expect(screen.getByRole('heading', { name: 'Target' })).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: /next/i }));
+    expect(screen.getByRole('heading', { name: 'End' })).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: /previous/i }));
+    expect(screen.getByRole('heading', { name: 'Target' })).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: /previous/i }));
+    expect(screen.getByRole('heading', { name: 'Start' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Middle' })).toBeNull();
+  });
+
+  test('previous from defaultStep returns to linear predecessor', async () => {
+    const user = userEvent.setup();
+    render(
+      <Grommet>
+        <Wizard
+          steps={basicSteps}
+          defaultStep="step3"
+          renderStep={renderStep}
+          aria-label="Test wizard"
+        />
+      </Grommet>,
+    );
+    await user.click(screen.getByRole('button', { name: /previous/i }));
+    expect(screen.getByRole('heading', { name: 'Step 2' })).toBeTruthy();
+  });
+
   test('skip only appears on skippable steps and never completes', async () => {
     const user = userEvent.setup();
     const onStepChange = jest.fn();
