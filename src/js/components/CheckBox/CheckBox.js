@@ -18,6 +18,7 @@ import {
 
 import { normalizeColor } from '../../utils';
 import { useThemeValue } from '../../utils/useThemeValue';
+import { useForwardedRef } from '../../utils/refs';
 
 const stopLabelClick = (event) => {
   // prevents clicking on the label trigging the event twice
@@ -87,6 +88,16 @@ const CheckBox = forwardRef(
         );
       }
     }, [checkedProp, toggle, indeterminate]);
+
+    const inputRef = useForwardedRef(ref);
+    // indeterminate is only settable as a DOM property, not an attribute.
+    // Keep it in sync with what is visually shown so assistive technology
+    // announces the checkbox as "mixed" rather than "not checked".
+    useEffect(() => {
+      if (inputRef.current) {
+        inputRef.current.indeterminate = !!indeterminate && !checked && !toggle;
+      }
+    }, [checked, indeterminate, inputRef, toggle]);
 
     const themeableProps = {
       checked,
@@ -177,7 +188,7 @@ const CheckBox = forwardRef(
           aria-label={ariaLabel || a11yTitle}
           {...passThemeFlag}
           {...rest}
-          ref={ref}
+          ref={inputRef}
           type="checkbox"
           {...removeUndefined({
             id,
