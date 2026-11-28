@@ -1,7 +1,8 @@
 // SPDX-FileCopyrightText: © Hewlett Packard Enterprise Development LP
 // SPDX-License-Identifier: Apache-2.0
 import React from 'react';
-import { render, fireEvent } from '@testing-library/react';
+import { render, fireEvent, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { axe } from 'jest-axe';
 import 'jest-styled-components';
 import 'jest-axe/extend-expect';
@@ -133,6 +134,78 @@ describe('CheckBox', () => {
     );
 
     expect(container.firstChild).toMatchSnapshot();
+  });
+
+  test('indeterminate is exposed to assistive technology', async () => {
+    const { container } = render(
+      <Grommet>
+        <CheckBox indeterminate label="test label" />
+      </Grommet>,
+    );
+
+    const checkbox = screen.getByRole('checkbox', {
+      name: 'test label',
+    }) as HTMLInputElement;
+    expect(checkbox.indeterminate).toBe(true);
+    // indeterminate checkboxes are neither checked nor unchecked
+    expect(screen.queryByRole('checkbox', { checked: false })).toBeNull();
+    expect(screen.queryByRole('checkbox', { checked: true })).toBeNull();
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
+  test('indeterminate is cleared when checked', async () => {
+    const user = userEvent.setup();
+    const onChange = jest.fn();
+    const { rerender } = render(
+      <Grommet>
+        <CheckBox indeterminate label="test label" onChange={onChange} />
+      </Grommet>,
+    );
+
+    const checkbox = screen.getByRole('checkbox', {
+      name: 'test label',
+    }) as HTMLInputElement;
+    await user.click(checkbox);
+    expect(onChange).toHaveBeenCalled();
+    expect(checkbox.indeterminate).toBe(false);
+    expect(checkbox.checked).toBe(true);
+
+    rerender(
+      <Grommet>
+        <CheckBox label="test label" onChange={onChange} />
+      </Grommet>,
+    );
+    expect(checkbox.indeterminate).toBe(false);
+  });
+
+  test('indeterminate is not applied to toggle', () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+    render(
+      <Grommet>
+        <CheckBox indeterminate toggle label="test label" />
+      </Grommet>,
+    );
+
+    const checkbox = screen.getByRole('checkbox', {
+      name: 'test label',
+    }) as HTMLInputElement;
+    expect(checkbox.indeterminate).toBe(false);
+
+    warnSpy.mockRestore();
+  });
+
+  test('forwards ref to the input when indeterminate', () => {
+    const ref = React.createRef<HTMLInputElement>();
+    render(
+      <Grommet>
+        <CheckBox ref={ref} indeterminate label="test label" />
+      </Grommet>,
+    );
+
+    expect(ref.current).toBe(screen.getByRole('checkbox'));
+    expect(ref.current?.indeterminate).toBe(true);
   });
 
   test('indeterminate checked warns', () => {
